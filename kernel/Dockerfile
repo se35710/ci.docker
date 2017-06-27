@@ -12,20 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ibmjava:8-jdk
+FROM ibmjava:8-sdk
 
 MAINTAINER Mathias Hermansson <mathias.hermansson@se.ibm.com> (@se35710)
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends unzip \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        apt-utils \
+    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+#        ca-certificates \
+#        wget \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install WebSphere Liberty
-ENV LIBERTY_VERSION 17.0.0_01
+ARG LIBERTY_VERSION
 ARG LIBERTY_URL
 ARG DOWNLOAD_OPTIONS=""
-RUN LIBERTY_URL=${LIBERTY_URL:-$(wget -q -O - https://public.dhe.ibm.com/ibmdl/export/pub/software/websphere/wasdev/downloads/wlp/index.yml  | grep $LIBERTY_VERSION -A 6 | sed -n 's/\s*kernel:\s//p' | tr -d '\r' )}  \
-    && wget $DOWNLOAD_OPTIONS $LIBERTY_URL -U UA-IBM-WebSphere-Liberty-Docker -O /tmp/wlp.zip \
+RUN INDEX_CACHE=$(wget -q -O - $DOWNLOAD_OPTIONS https://public.dhe.ibm.com/ibmdl/export/pub/software/websphere/wasdev/downloads/wlp/index.yml) \
+    && LIBERTY_VERSION=${LIBERTY_VERSION:-$(echo "$INDEX_CACHE" | grep -o -E "^[[:digit:]]{2}\.[[:digit:]._]+" | sort -V | tail -1)} \
+    && LIBERTY_URL=${LIBERTY_URL:-$(echo "$INDEX_CACHE" | grep $LIBERTY_VERSION -A 6 | sed -n 's/\s*kernel:\s//p' | tr -d '\r' )} \
+    && wget -o /dev/stdout --progress=dot:mega $DOWNLOAD_OPTIONS $LIBERTY_URL -U UA-IBM-WebSphere-Liberty-Docker -O /tmp/wlp.zip \
     && unzip -q /tmp/wlp.zip -d /opt/ibm \
     && rm /tmp/wlp.zip
 ENV PATH=/opt/ibm/wlp/bin:$PATH
@@ -41,6 +53,6 @@ RUN mkdir /logs \
 RUN /opt/ibm/wlp/bin/server create \
     && rm -rf $WLP_OUTPUT_DIR/.classCache /output/workarea
 COPY docker-server /opt/ibm/docker/
-EXPOSE 9080 9443
+EXPOSE 9080
 
 CMD ["/opt/ibm/docker/docker-server", "run", "defaultServer"]
